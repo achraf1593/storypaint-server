@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:background="#FFF8F0"
+    android:padding="16dp"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Título -->
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Dibuja algo y crea una actividad"
+        android:textSize="22sp"
+        android:textColor="#222222"
+        android:gravity="center"
+        android:layout_marginBottom="12dp"/>
+
+    <!-- Área de dibujo -->
+    <com.example.storypaint.DibujoView
+        android:id="@+id/dibujoView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#FFFFFF"
+        android:padding="8dp"
+        android:elevation="4dp"/>
+
+    <!-- Botón principal -->
+    <Button
+        android:id="@+id/btnGenerate"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="Generar actividad"
+        android:textSize="18sp"
+        android:textColor="#FFFFFF"
+        android:backgroundTint="#A3D2CA"
+        android:layout_marginTop="12dp"/>
+
+    <!-- Progress bar simple -->
+    <ProgressBar
+        android:id="@+id/progressBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:layout_gravity="center"
+        android:layout_marginTop="8dp"/>
+</LinearLayout>

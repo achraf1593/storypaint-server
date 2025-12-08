@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#FFF0E1">
+
+    <!-- Vista previa del color -->
+    <LinearLayout
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:id="@+id/previewColorBox"
+        android:background="#FFFFFF"
+        android:layout_gravity="center"
+        android:padding="4dp"
+        android:layout_marginBottom="8dp" />
+
+    <com.example.storypaint.ColorWheelView
+        android:id="@+id/colorWheel"
+        android:layout_width="match_parent"
+        android:layout_height="300dp" />
+
+    <!-- Botones fila 1 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="10dp">
+
+        <Button
+            android:id="@+id/btnPick1"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="Seleccionar"
+            android:backgroundTint="#FFCC80"
+            android:textColor="#000000" />
+
+        <Button
+            android:id="@+id/btnPipette"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="Pipeta"
+            android:backgroundTint="#FFE0B2"
+            android:textColor="#000000"
+            android:layout_marginStart="6dp"/>
+    </LinearLayout>
+
+    <!-- Botones fila 2 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp">
+
+        <Button
+            android:id="@+id/btnMix"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="Mezclar"
+            android:backgroundTint="#AED581"
+            android:textColor="#000000" />
+
+        <Button
+            android:id="@+id/btnAddRecent"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="Añadir a recientes"
+            android:backgroundTint="#C5E1A5"
+            android:textColor="#000000"
+            android:layout_marginStart="6dp"/>
+    </LinearLayout>
+
+    <!-- Cancelar -->
+    <Button
+        android:id="@+id/btnCancel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Cancelar"
+        android:layout_marginTop="10dp"
+        android:backgroundTint="#FFAB91"
+        android:textColor="#000000" />
+
+</LinearLayout>

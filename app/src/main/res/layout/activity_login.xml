@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:gravity="center"
+    android:padding="24dp" android:background="#FFF8F0"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="¡Bienvenido a StoryPaint!" android:textSize="22sp" android:textColor="#4A4A4A"
+        android:layout_marginBottom="16dp"/>
+
+    <EditText android:id="@+id/etName" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:hint="Tu nombre" android:padding="12dp"/>
+
+    <Button android:id="@+id/btnEnter" android:layout_width="match_parent" android:layout_height="56dp"
+        android:text="Entrar" android:layout_marginTop="16dp" android:backgroundTint="#A3D2CA"/>
+</LinearLayout>

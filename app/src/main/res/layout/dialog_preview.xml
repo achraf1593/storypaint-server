@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="16dp"
+    android:background="#FFFDF8">
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp">
+
+        <ImageView
+            android:id="@+id/previewImage"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
+            android:scaleType="centerInside"
+            android:background="#FFFFFF"
+            android:visibility="visible"
+            android:layout_marginBottom="12dp"
+            android:elevation="4dp"/>
+
+        <TextView
+            android:id="@+id/tvActivityText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="18sp"
+            android:textColor="#222"
+            android:padding="12dp"
+            android:layout_marginBottom="12dp"/>
+
+        <Button
+            android:id="@+id/btnAnother"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="Otra actividad"
+            android:backgroundTint="#A3D2CA"
+            android:textColor="#000"/>
+
+        <Button
+            android:id="@+id/btnDiscard"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="Cerrar"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="#FFADAD"
+            android:textColor="#000"/>
+    </LinearLayout>
+</ScrollView>
