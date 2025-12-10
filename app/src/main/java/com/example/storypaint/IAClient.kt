@@ -10,10 +10,9 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
-
 object IAClient {
     private const val TAG = "IAClient"
-    private const val SERVER_URL = "https://tu-endpoint-flask.ngrok.io/generar_imagen"
+    private const val SERVER_URL = "https://storypaint-server.onrender.com/generar_imagen"
     private val JSON = "application/json; charset=utf-8".toMediaTypeOrNull()
     private val client = OkHttpClient.Builder()
         .callTimeout(120, TimeUnit.SECONDS)
@@ -31,7 +30,6 @@ object IAClient {
     ) {
         thread {
             try {
-                // Análisis rápido del dibujo
                 val infoDibujo = analizarDibujo(bitmap)
                 val prompt = generarPrompt(infoDibujo)
 
@@ -40,6 +38,12 @@ object IAClient {
                 val baos = ByteArrayOutputStream()
                 scaled.compress(Bitmap.CompressFormat.PNG, 90, baos)
                 val base64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+
+                // ---------------------------
+                // LOGUEO DE BASE64
+                // ---------------------------
+                Log.d(TAG, "Base64 tamaño: ${base64.length}")
+                Log.d(TAG, "Base64 prefijo: ${base64.take(80)}")
 
                 val json = JSONObject().apply {
                     put("imagen", base64)
@@ -62,13 +66,20 @@ object IAClient {
                 val activityText = j.optString("actividad_generada", fallbackActividad(infoDibujo))
                 val imgB64 = j.optString("imagen_generada", null)
 
+                // ---------------------------
+                // CHEQUEO DE LONGITUD DE IMAGEN
+                // ---------------------------
+                val validImage = imgB64 != null && imgB64.length > 200
+                if (!validImage) {
+                    Log.w(TAG, "Imagen recibida inválida o demasiado corta. Solo se mostrará la actividad.")
+                }
+
                 activity.runOnUiThread {
-                    onSuccess(Result(activityText = activityText, imageBitmapBase64 = imgB64))
+                    onSuccess(Result(activityText = activityText, imageBitmapBase64 = if (validImage) imgB64 else null))
                 }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error IAClient: ${e.message}")
-                // Fallback seguro
                 val infoDibujo = analizarDibujo(bitmap)
                 activity.runOnUiThread {
                     onSuccess(Result(activityText = fallbackActividad(infoDibujo), imageBitmapBase64 = null))
@@ -77,9 +88,7 @@ object IAClient {
         }
     }
 
-    // Analiza el dibujo: colores predominantes y formas básicas
     private fun analizarDibujo(bitmap: Bitmap): Map<String, Any> {
-        // Este es un análisis muy básico; puedes mejorar con OpenCV
         val width = bitmap.width
         val height = bitmap.height
         val colorCount = mutableMapOf<Int, Int>()
@@ -93,7 +102,6 @@ object IAClient {
         return mapOf("topColor" to topColor)
     }
 
-    // Genera prompt dinámico
     private fun generarPrompt(info: Map<String, Any>): String {
         val color = info["topColor"] as Int
         val colorName = when (color) {
@@ -107,7 +115,6 @@ object IAClient {
                 "Instrucciones claras y breves, que pueda realizar sin ayuda constante."
     }
 
-    // Fallback seguro si la IA falla
     private fun fallbackActividad(info: Map<String, Any>): String {
         return "¡Crea una historia o juego usando tu dibujo! " +
                 "Puedes inventar nombres, colores y aventuras según lo que dibujaste."
