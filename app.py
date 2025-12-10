@@ -1,114 +1,145 @@
-import os
 import base64
 import tempfile
+import os
 from flask import Flask, request, jsonify
 import google.generativeai as genai
 
-# Inicializar Flask
 app = Flask(__name__)
 
-# Configurar la API key de Gemini/Google
-API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-if not API_KEY:
-    app.logger.warning("⚠️ No se encontró GEMINI_API_KEY/GOOGLE_API_KEY en el entorno.")
-else:
-    genai.configure(api_key=API_KEY)
+# Configurar tu API KEY
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# Modelos candidatos
-MODEL_CANDIDATES = [
-    "models/gemini-2.5-flash-image",
-    "models/gemini-2.5-flash-image-preview",
-    "models/gemini-3-pro-image-preview",
-    "models/gemini-flash-latest",
-]
+# Modelos
+MODEL_IMAGE = "models/gemini-2.5-flash-image"
+MODEL_TEXT = "models/gemini-2.0-flash"  # modelo de texto rápido
 
-def extraer_base64_de_respuesta(respuesta):
-    try:
-        cand = respuesta.candidates[0]
-        parts = getattr(cand, "content", None)
-        if parts:
-            try:
-                p = parts.parts[0]
-                inline = getattr(p, "inline_data", None)
-                if inline and getattr(inline, "data", None):
-                    return inline.data
-            except Exception:
-                pass
-        text = getattr(cand, "text", None)
-        if text:
-            import re, json
-            b64match = re.search(r'([A-Za-z0-9+/=]{100,})', text)
-            if b64match:
-                return b64match.group(1)
-            try:
-                parsed = json.loads(text)
-                for k in ("b64", "image", "imagen", "imagen_base64", "data"):
-                    if k in parsed and isinstance(parsed[k], str):
-                        return parsed[k]
-            except Exception:
-                pass
-    except Exception:
-        pass
+def extraer_base64_de_respuesta(resp):
+    """
+    Extrae de manera robusta la base64 de la imagen generada.
+    Prueba distintos formatos que pueden devolver los modelos Gemini.
+    """
+    # Primer intento: .images
+    if hasattr(resp, "images") and resp.images:
+        return resp.images[0].base64_data
+
+    # Segundo intento: candidates -> content -> image
+    if hasattr(resp, "candidates") and resp.candidates:
+        candidate = resp.candidates[0]
+        content = getattr(candidate, "content", [])
+        if content and hasattr(content[0], "image"):
+            return getattr(content[0].image, "base64_data", None)
+        if content and hasattr(content[0], "image"):
+            inline_data = getattr(content[0].image, "inline_data", None)
+            if inline_data and hasattr(inline_data, "data"):
+                return inline_data.data
+
+    # Fallback
     return None
+
 
 @app.route("/generar_imagen", methods=["POST"])
 def generar_imagen():
     try:
         data = request.get_json()
-        if not data or "imagen" not in data or "prompt" not in data:
-            return jsonify({"error": "Faltan campos requeridos (imagen o prompt)."}), 400
+
+        # ---------------------------
+        # VALIDACIÓN DEL REQUEST
+        # ---------------------------
+        if not data or "imagen" not in data:
+            return jsonify({"error": "Falta el campo 'imagen' en la solicitud."}), 400
+        if "prompt" not in data:
+            return jsonify({"error": "Falta el campo 'prompt'."}), 400
 
         imagen_b64 = data["imagen"]
         prompt = data["prompt"]
 
+        # ---------------------------
+        # DECODIFICAR BASE64
+        # ---------------------------
         try:
             imagen_bytes = base64.b64decode(imagen_b64)
         except Exception as e:
-            return jsonify({"error": f"Error al decodificar la imagen: {e}"}), 400
+            return jsonify({"error": "La imagen base64 está corrupta.", "detalle": str(e)}), 400
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-            tmp_file.write(imagen_bytes)
-            tmp_path = tmp_file.name
-            app.logger.debug(f"Imagen temporal guardada en {tmp_path}")
+        if len(imagen_bytes) < 500:
+            return jsonify({"error": "Imagen demasiado pequeña o corrupta."}), 400
 
-        last_error = None
-        used_model = None
-        respuesta = None
+        # Guardar a archivo temporal
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+            tmp.write(imagen_bytes)
+            tmp_path = tmp.name
 
-        for candidate in MODEL_CANDIDATES:
-            try:
-                app.logger.debug(f"Intentando generar con modelo: {candidate}")
-                modelo = genai.GenerativeModel(candidate)
-                respuesta = modelo.generate_content([prompt, {"mime_type": "image/png", "data": imagen_bytes}])
-                used_model = candidate
-                break
-            except Exception as e:
-                app.logger.warning(f"Modelo {candidate} falló: {e}")
-                last_error = str(e)
-                respuesta = None
-                continue
+        app.logger.info(f"Imagen recibida -> {tmp_path} ({len(imagen_bytes)} bytes)")
 
-        if respuesta is None:
-            msg = f"Ningún modelo intentado funcionó. Último error: {last_error}"
-            app.logger.error(msg)
-            return jsonify({"error": msg, "detalle": last_error}), 500
+        # ---------------------------
+        # GENERAR IMAGEN NUEVA
+        # ---------------------------
+        imagen_generada_b64 = None
+        try:
+            model_img = genai.GenerativeModel(MODEL_IMAGE)
 
-        imagen_generada_b64 = extraer_base64_de_respuesta(respuesta)
+            # Leer la imagen de nuevo para enviar como base64
+            with open(tmp_path, "rb") as f:
+                imagen_bytes_for_model = f.read()
 
-        if not imagen_generada_b64:
-            app.logger.error("No se pudo extraer imagen en base64 del modelo.")
-            return jsonify({"error": "No se recibió una imagen válida del modelo.", "modelo_usado": used_model}), 500
+            img_resp = model_img.generate_content(
+                contents=[
+                    prompt,
+                    {"image": base64.b64encode(imagen_bytes_for_model).decode("utf-8")},
+                    "Genera una nueva imagen creativa basada en este dibujo, conservando colores y formas."
+                ]
+            )
 
-        imagen_generada_b64 = imagen_generada_b64.replace("\n", "").replace(" ", "")
+            # Log completo de la respuesta raw
+            app.logger.debug(f"Respuesta raw del modelo: {img_resp}")
 
+            # Extraer imagen en base64 de manera robusta
+            imagen_generada_b64 = extraer_base64_de_respuesta(img_resp)
+            if imagen_generada_b64 is None:
+                app.logger.warning("No se pudo extraer imagen, devolviendo null")
+
+        except Exception as e:
+            app.logger.warning(f"Fallo en modelo de imagen: {e}")
+            imagen_generada_b64 = None
+
+        # ---------------------------
+        # GENERAR ACTIVIDAD (TEXTO)
+        # ---------------------------
+        actividad_generada = None
+        try:
+            prompt_text = (
+                "Eres un educador creativo. A partir de este dibujo y prompt, "
+                "crea UNA actividad segura para niños de 5-8 años. Debe incluir:\n"
+                "- titulo (1 línea)\n"
+                "- instrucciones paso a paso (3-5 pasos)\n"
+                "- duracion_minutos\n"
+                "- materiales simples\n"
+                "Responde SOLO en JSON válido.\n"
+                f"Prompt original: {prompt}"
+            )
+
+            model_text = genai.GenerativeModel(MODEL_TEXT)
+            txt_resp = model_text.generate_content(prompt_text)
+
+            actividad_generada = getattr(txt_resp, "text", None) or str(txt_resp)
+
+        except Exception as e:
+            app.logger.warning(f"Fallo generando actividad textual: {e}")
+            actividad_generada = None
+
+        # ---------------------------
+        # RESPUESTA FINAL
+        # ---------------------------
         return jsonify({
             "imagen_generada": imagen_generada_b64,
-            "modelo_usado": used_model
+            "actividad_generada": actividad_generada,
+            "modelo_usado": MODEL_IMAGE
         })
 
     except Exception as e:
-        app.logger.error(f"Error general del servidor: {e}")
-        return jsonify({"error": f"Error general del servidor: {e}"}), 500
+        app.logger.error(f"Error general en /generar_imagen: {e}")
+        return jsonify({"error": "Error interno del servidor.", "detalle": str(e)}), 500
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=5000)
