@@ -11,13 +11,11 @@ genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
 # Modelos
 MODEL_IMAGE = "models/gemini-2.5-flash-image"
-MODEL_TEXT = "models/gemini-2.0-flash"  # modelo de texto rápido
+MODEL_TEXT = "models/gemini-2.0-flash"
+
 
 def extraer_base64_de_respuesta(resp):
-    """
-    Extrae de manera robusta la base64 de la imagen generada.
-    Prueba distintos formatos que pueden devolver los modelos Gemini.
-    """
+    """Extrae de manera robusta la base64 de la imagen generada."""
     # Primer intento: .images
     if hasattr(resp, "images") and resp.images:
         return resp.images[0].base64_data
@@ -27,13 +25,14 @@ def extraer_base64_de_respuesta(resp):
         candidate = resp.candidates[0]
         content = getattr(candidate, "content", [])
         if content and hasattr(content[0], "image"):
-            return getattr(content[0].image, "base64_data", None)
-        if content and hasattr(content[0], "image"):
-            inline_data = getattr(content[0].image, "inline_data", None)
-            if inline_data and hasattr(inline_data, "data"):
-                return inline_data.data
+            img = getattr(content[0], "image", None)
+            if img is None:
+                return None
+            if hasattr(img, "base64_data"):
+                return img.base64_data
+            if hasattr(img, "inline_data") and hasattr(img.inline_data, "data"):
+                return img.inline_data.data
 
-    # Fallback
     return None
 
 
@@ -78,7 +77,6 @@ def generar_imagen():
         try:
             model_img = genai.GenerativeModel(MODEL_IMAGE)
 
-            # Leer la imagen de nuevo para enviar como base64
             with open(tmp_path, "rb") as f:
                 imagen_bytes_for_model = f.read()
 
@@ -86,20 +84,25 @@ def generar_imagen():
                 contents=[
                     prompt,
                     {"image": base64.b64encode(imagen_bytes_for_model).decode("utf-8")},
-                    "Genera una nueva imagen creativa basada en este dibujo, conservando colores y formas."
+                    "Genera una nueva imagen creativa basada en este dibujo."
                 ]
             )
 
-            # Log completo de la respuesta raw
+            # -------------------------------
+            # 🔥 DEBUG: RESPUESTA CRUDA
+            # -------------------------------
+            print("\n========== DEBUG RESPUESTA MODELO RAW ==========")
+            print(img_resp)
+            print("================================================\n")
+
             app.logger.debug(f"Respuesta raw del modelo: {img_resp}")
 
-            # Extraer imagen en base64 de manera robusta
             imagen_generada_b64 = extraer_base64_de_respuesta(img_resp)
             if imagen_generada_b64 is None:
-                app.logger.warning("No se pudo extraer imagen, devolviendo null")
+                app.logger.warning("No se pudo extraer imagen generada.")
 
         except Exception as e:
-            app.logger.warning(f"Fallo en modelo de imagen: {e}")
+            app.logger.warning(f"Fallo generando imagen: {e}")
             imagen_generada_b64 = None
 
         # ---------------------------
@@ -107,20 +110,16 @@ def generar_imagen():
         # ---------------------------
         actividad_generada = None
         try:
+            model_text = genai.GenerativeModel(MODEL_TEXT)
+
             prompt_text = (
                 "Eres un educador creativo. A partir de este dibujo y prompt, "
-                "crea UNA actividad segura para niños de 5-8 años. Debe incluir:\n"
-                "- titulo (1 línea)\n"
-                "- instrucciones paso a paso (3-5 pasos)\n"
-                "- duracion_minutos\n"
-                "- materiales simples\n"
-                "Responde SOLO en JSON válido.\n"
-                f"Prompt original: {prompt}"
+                "crea una actividad para niños 5–8 años con título, pasos, materiales "
+                "y duración. Responde SOLO en JSON.\n"
+                f"Prompt: {prompt}"
             )
 
-            model_text = genai.GenerativeModel(MODEL_TEXT)
             txt_resp = model_text.generate_content(prompt_text)
-
             actividad_generada = getattr(txt_resp, "text", None) or str(txt_resp)
 
         except Exception as e:
@@ -132,13 +131,13 @@ def generar_imagen():
         # ---------------------------
         return jsonify({
             "imagen_generada": imagen_generada_b64,
-            "actividad_generada": actividad_generada,
+            "actividad_generada"S: actividad_generada,
             "modelo_usado": MODEL_IMAGE
         })
 
     except Exception as e:
         app.logger.error(f"Error general en /generar_imagen: {e}")
-        return jsonify({"error": "Error interno del servidor.", "detalle": str(e)}), 500
+        return jsonify({"error": "Error interno del servidor", "detalle": str(e)}), 500
 
 
 if __name__ == "__main__":
