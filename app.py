@@ -20,10 +20,8 @@ def looks_like_base64(s: str) -> bool:
     if not isinstance(s, str):
         return False
     s_stripped = re.sub(r"\s+", "", s)
-    # mínimo 200 chars to avoid false positives
     if len(s_stripped) < 200:
         return False
-    # base64 charset check (loosened)
     return re.fullmatch(r"[A-Za-z0-9+/=]+", s_stripped) is not None
 
 
@@ -45,7 +43,6 @@ def find_base64_in_obj(obj, _seen=None):
     # bytes
     if isinstance(obj, (bytes, bytearray)):
         try:
-            # try decode bytes to base64-like string
             s = obj.decode("utf-8", errors="ignore")
             if looks_like_base64(s):
                 return s
@@ -56,7 +53,6 @@ def find_base64_in_obj(obj, _seen=None):
     # dict-like
     if isinstance(obj, dict):
         for k, v in obj.items():
-            # keys like 'data', 'base64', 'base64_data', 'image' are interesting
             if isinstance(k, str) and k.lower() in ("data", "image", "base64", "base64_data", "inline_data"):
                 candidate = find_base64_in_obj(v, _seen)
                 if candidate:
@@ -67,7 +63,7 @@ def find_base64_in_obj(obj, _seen=None):
                     return candidate
         return None
 
-    # list/tuple
+    # list/tuple/set
     if isinstance(obj, (list, tuple, set)):
         for v in obj:
             candidate = find_base64_in_obj(v, _seen)
@@ -75,7 +71,7 @@ def find_base64_in_obj(obj, _seen=None):
                 return candidate
         return None
 
-    # object with attrs: try common attr names then fallback to vars()
+    # object attributes
     for attr in ("images", "candidates", "content", "image", "inline_data", "data", "base64_data", "blob", "output"):
         if hasattr(obj, attr):
             try:
@@ -86,7 +82,6 @@ def find_base64_in_obj(obj, _seen=None):
             except Exception:
                 pass
 
-    # try vars(obj) safely
     try:
         d = vars(obj)
     except Exception:
@@ -102,17 +97,18 @@ def find_base64_in_obj(obj, _seen=None):
 
 def extraer_base64_de_respuesta(resp):
     """
-    Intenta extraer la base64 de la respuesta de Gemini de forma robusta.
-    Primero intenta rutas comunes, luego escanea recursivamente.
+    Extrae base64 de la respuesta de Gemini de forma robusta.
+    Maneja rutas conocidas, bytes y strings con fence ```json``` alrededor.
     """
-    # Rutas comunes conocidas
     try:
         if hasattr(resp, "images") and getattr(resp, "images"):
             img = resp.images[0]
-            for attr in ("base64_data", "data", "image_data"):
+            for attr in ("base64_data", "data", "image_data", "blob"):
                 if hasattr(img, attr):
                     val = getattr(img, attr)
-                    if val:
+                    if isinstance(val, (bytes, bytearray)):
+                        return base64.b64encode(val).decode("utf-8")
+                    if isinstance(val, str) and looks_like_base64(val):
                         return val
     except Exception:
         pass
@@ -120,18 +116,28 @@ def extraer_base64_de_respuesta(resp):
     try:
         if hasattr(resp, "candidates") and getattr(resp, "candidates"):
             for cand in resp.candidates:
-                # cand.content puede ser lista de partes
                 content = getattr(cand, "content", None)
                 candidate = find_base64_in_obj(content)
                 if candidate:
-                    return candidate
+                    if isinstance(candidate, (bytes, bytearray)):
+                        return base64.b64encode(candidate).decode("utf-8")
+                    if isinstance(candidate, str) and looks_like_base64(candidate):
+                        return candidate
+                    m = re.search(r"[A-Za-z0-9+/=]{200,}", str(candidate))
+                    if m:
+                        return m.group(0)
     except Exception:
         pass
 
-    # Fallback genérico: buscar en todo el objeto
     candidate = find_base64_in_obj(resp)
     if candidate:
-        return candidate
+        if isinstance(candidate, (bytes, bytearray)):
+            return base64.b64encode(candidate).decode("utf-8")
+        if isinstance(candidate, str) and looks_like_base64(candidate):
+            return candidate
+        m = re.search(r"[A-Za-z0-9+/=]{200,}", str(candidate))
+        if m:
+            return m.group(0)
 
     return None
 
@@ -141,10 +147,6 @@ def generar_imagen():
     tmp_path = None
     try:
         data = request.get_json()
-
-        # ---------------------------
-        # VALIDACIÓN DEL REQUEST
-        # ---------------------------
         if not data or "imagen" not in data:
             return jsonify({"error": "Falta el campo 'imagen' en la solicitud."}), 400
         if "prompt" not in data:
@@ -153,9 +155,6 @@ def generar_imagen():
         imagen_b64 = data["imagen"]
         prompt = data["prompt"]
 
-        # ---------------------------
-        # DECODIFICAR BASE64
-        # ---------------------------
         try:
             imagen_bytes = base64.b64decode(imagen_b64)
         except Exception as e:
@@ -164,24 +163,18 @@ def generar_imagen():
         if len(imagen_bytes) < 500:
             return jsonify({"error": "Imagen demasiado pequeña o corrupta."}), 400
 
-        # Guardar a archivo temporal
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
             tmp.write(imagen_bytes)
             tmp_path = tmp.name
 
         app.logger.info(f"Imagen recibida -> {tmp_path} ({len(imagen_bytes)} bytes)")
 
-        # ---------------------------
-        # GENERAR IMAGEN NUEVA (FORMATO CORRECTO)
-        # ---------------------------
         imagen_generada_b64 = None
         try:
             model_img = genai.GenerativeModel(MODEL_IMAGE)
-
             with open(tmp_path, "rb") as f:
                 imagen_bytes_for_model = f.read()
 
-            # ---> Aquí: inline_data con mime_type + data
             img_resp = model_img.generate_content(
                 contents=[
                     prompt,
@@ -195,20 +188,7 @@ def generar_imagen():
                 ]
             )
 
-            # -------------------------------
-            # 🔥 DEBUG: RESPUESTA CRUDA (IMAGEN)
-            # -------------------------------
-            print("\n========== DEBUG RESPUESTA MODELO RAW (IMAGEN) ==========")
-            try:
-                # si es convertible a JSON decente
-                print(json.dumps(img_resp.__dict__, default=str, indent=2))
-            except Exception:
-                print(str(img_resp))
-            print("========================================================\n")
-
             app.logger.debug(f"Respuesta raw del modelo (imagen): {str(img_resp)[:2000]}")
-
-            # Extraer imagen en base64 de manera robusta
             imagen_generada_b64 = extraer_base64_de_respuesta(img_resp)
             if imagen_generada_b64 is None:
                 app.logger.warning("No se pudo extraer imagen generada. image field is None.")
@@ -217,13 +197,9 @@ def generar_imagen():
             app.logger.warning(f"Fallo generando imagen: {e}")
             imagen_generada_b64 = None
 
-        # ---------------------------
-        # GENERAR ACTIVIDAD (TEXTO)
-        # ---------------------------
         actividad_generada = None
         try:
             model_text = genai.GenerativeModel(MODEL_TEXT)
-
             prompt_text = (
                 "Eres un educador creativo. A partir de este dibujo y prompt, "
                 "crea UNA actividad segura para niños de 5-8 años. Debe incluir:\n"
@@ -234,30 +210,44 @@ def generar_imagen():
                 "Responde SOLO en JSON válido.\n"
                 f"Prompt original: {prompt}"
             )
-
             txt_resp = model_text.generate_content(prompt_text)
 
-            # -------------------------------
-            # 🔥 DEBUG: RESPUESTA CRUDA (TEXTO)
-            # -------------------------------
-            print("\n========== DEBUG RESPUESTA MODELO RAW (TEXTO) ==========")
-            try:
-                print(json.dumps(txt_resp.__dict__, default=str, indent=2))
-            except Exception:
-                print(str(txt_resp))
-            print("======================================================\n")
-            app.logger.debug(f"Respuesta raw del modelo (texto): {str(txt_resp)[:2000]}")
+            raw_act = getattr(txt_resp, "text", None) or find_base64_in_obj(txt_resp) or str(txt_resp)
 
-            # intenta obtener texto directo
-            actividad_generada = getattr(txt_resp, "text", None) or find_base64_in_obj(txt_resp) or str(txt_resp)
+            def extract_json_from_text(s: str):
+                if not isinstance(s, str):
+                    return None
+                m = re.search(r"```json\\s*(\\{.*?\\})\\s*```", s, flags=re.DOTALL)
+                if m:
+                    try:
+                        return json.loads(m.group(1))
+                    except Exception:
+                        return m.group(1)
+                m2 = re.search(r"(\\{[\\s\\S]{50,}\\})", s)
+                if m2:
+                    js_text = m2.group(1)
+                    try:
+                        return json.loads(js_text)
+                    except Exception:
+                        return js_text
+                s_stripped = s.strip()
+                if s_stripped.startswith("{") and s_stripped.endswith("}"):
+                    try:
+                        return json.loads(s_stripped)
+                    except Exception:
+                        return s_stripped
+                return s
+
+            parsed = extract_json_from_text(raw_act)
+            if isinstance(parsed, dict):
+                actividad_generada = json.dumps(parsed, ensure_ascii=False)
+            else:
+                actividad_generada = parsed
 
         except Exception as e:
             app.logger.warning(f"Fallo generando actividad textual: {e}")
             actividad_generada = None
 
-        # ---------------------------
-        # RESPUESTA FINAL
-        # ---------------------------
         return jsonify({
             "imagen_generada": imagen_generada_b64,
             "actividad_generada": actividad_generada,
@@ -269,7 +259,6 @@ def generar_imagen():
         return jsonify({"error": "Error interno del servidor", "detalle": str(e)}), 500
 
     finally:
-        # intentar limpiar el temp file
         try:
             if tmp_path and os.path.exists(tmp_path):
                 os.remove(tmp_path)
