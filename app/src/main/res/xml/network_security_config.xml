@@ -1,7 +1,0 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<network-security-config>
-    <!-- Permitir tráfico HTTP (no cifrado) hacia tu servidor local -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">192.168.1.133</domain>
-    </domain-config>
-</network-security-config>
