@@ -14,6 +14,7 @@ genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 MODEL_IMAGE = "models/gemini-2.5-flash-image"
 MODEL_TEXT = "models/gemini-2.0-flash"
 
+
 # -----------------------------------------------------------
 # Utilidad simple: extraer base64 si viene dentro de images[]
 # -----------------------------------------------------------
@@ -37,6 +38,7 @@ def extract_image_b64(resp):
 # -----------------------------------------------------------
 @app.route("/generar_imagen", methods=["POST"])
 def generar_imagen():
+    tmp_path = None
     try:
         data = request.get_json()
         if not data:
@@ -66,27 +68,22 @@ def generar_imagen():
 
         instruccion_arreglo = (
             "Toma este dibujo hecho por un niño pequeño y devuélvelo como una versión "
-            "ARREGLADA pero FIEL: refuerza las líneas, define contornos, corrige trazos "
-            "torcidos y colorea suavemente sin cambiar la intención original. "
-            "No añadas elementos nuevos. Devuelve SOLO la imagen PNG."
+            "arreglada pero fiel: refuerza líneas, define contornos y colorea suavemente "
+            "sin cambiar la intención original. Devuelve SOLO la imagen PNG."
         )
 
-        resp_imagen = model_img.generate_content(
-            contents=[
-                instruccion_arreglo,
-                {
-                    "inline_data": {
-                        "mime_type": "image/png",
-                        "data": imagen_b64
-                    }
-                }
-            ]
-        )
+        resp_imagen = model_img.generate_content(contents=[
+            instruccion_arreglo,
+            {"inline_data": {
+                "mime_type": "image/png",
+                "data": imagen_b64
+            }}
+        ])
 
         imagen_generada = extract_image_b64(resp_imagen)
 
         # -------------------------------------
-        # 2) GENERAR ACTIVIDAD (JSON obligatorio)
+        # 2) GENERAR ACTIVIDAD (JSON OBLIGATORIO)
         # -------------------------------------
         model_text = genai.GenerativeModel(MODEL_TEXT)
 
@@ -95,8 +92,9 @@ Eres un diseñador de juegos infantiles para niños de 5 a 8 años.
 Basándote SOLO en el dibujo proporcionado y este texto del niño:
 "{prompt_usuario}"
 
-Genera UNA actividad simple y divertida que anime al niño a jugar con su propio dibujo.
-Responde EXCLUSIVAMENTE con JSON válido con esta estructura:
+Genera una actividad simple y divertida para que el niño juegue con su dibujo.
+
+Responde EXCLUSIVAMENTE con JSON válido:
 
 {{
   "titulo": "...",
@@ -111,12 +109,10 @@ Responde EXCLUSIVAMENTE con JSON válido con esta estructura:
         resp_txt = model_text.generate_content(prompt_actividad)
         texto = resp_txt.text.strip()
 
-        # Intentar cargar JSON
         try:
             actividad_json = json.loads(texto)
             actividad_generada = json.dumps(actividad_json, ensure_ascii=False)
         except:
-            # fallback seguro: enviar el texto tal cual
             actividad_generada = texto
 
         return jsonify({
@@ -129,11 +125,11 @@ Responde EXCLUSIVAMENTE con JSON válido con esta estructura:
         return jsonify({"error": "Error interno", "detalle": str(e)}), 500
 
     finally:
-        try:
-            if tmp_path and os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
+            try:
                 os.remove(tmp_path)
-        except:
-            pass
+            except:
+                pass
 
 
 if __name__ == "__main__":
